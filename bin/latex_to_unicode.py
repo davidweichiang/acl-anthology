@@ -13,6 +13,24 @@ import codecs, latexcodec
 
 math_re = re.compile(r'\$([^\$]*)\$', re.MULTILINE)
 
+def replace_node(old, new):
+    old.clear()
+    old.tag = new.tag
+    old.attrib = new.attrib
+    old.text = new.text
+    old.extend(new)
+    old.tail = new.tail
+
+def append_text(node, text):
+    if len(node) == 0:
+        if node.text is None:
+            node.text = ""
+        node.text += text
+    else:
+        if node[-1].tail is None:
+            node[-1].tail = ""
+        node[-1].tail += text
+
 def detex(s):
     if s is None: return None
     
@@ -37,22 +55,16 @@ def detex_node(node):
     
     newnode = xml.etree.ElementTree.Element(node.tag, node.attrib)
 
-    def append_text(text):
-        if len(newnode) == 0:
-            newnode.text = text
-        else:
-            newnode[-1].tail = text
-
     def append_math(text):
         if text is None: return
         prev = 0
         for m in math_re.finditer(text):
-            append_text(text[prev:m.start()])
+            append_text(newnode, text[prev:m.start()])
             tex = xml.etree.ElementTree.Element('tex-math')
             tex.text = m.group(1)
             newnode.append(tex)
             prev = m.end()
-        append_text(text[prev:])
+        append_text(newnode, text[prev:])
     
     append_math(detex(node.text))
     for child in node:
@@ -72,15 +84,12 @@ if __name__ == "__main__":
     import sys
     import argparse
     ap = argparse.ArgumentParser(description='Convert LaTeX commands and special characters.')
-    ap.add_argument('infile', help="XML file to convert")
-    ap.add_argument('-o', dest='outfile', help="XML file to write (default stdout)")
+    ap.add_argument('infile', help="XML file to read")
+    ap.add_argument('outfile', help="XML file to write")
     ap.add_argument('-f', '--field', action='append', help="Field to convert (can be used more than once)")
     args = ap.parse_args()
     if not args.field:
         print("error: at least one field (-f) is required", file=sys.stderr)
-        sys.exit(1)
-    if not args.outfile:
-        print("error: output file (-o) is required", file=sys.stderr)
         sys.exit(1)
 
     tree = xml.etree.ElementTree.parse(args.infile)
@@ -93,11 +102,6 @@ if __name__ == "__main__":
             mod = node_tostring(newnode)
             if orig != mod:
                 print("{}-{}: {} -> {}".format(root.attrib['id'], paper.attrib['id'], orig, mod), file=sys.stderr)
-                # replace new with newnode; isn't there an easier way?
-                node.clear()
-                node.attrib = newnode.attrib
-                node.text = newnode.text
-                node.tail = newnode.tail
-                node.extend(newnode)
+                replace_node(node, newnode)
 
     tree.write(args.outfile, encoding="UTF-8")
